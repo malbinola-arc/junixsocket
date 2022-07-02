@@ -12,7 +12,7 @@ x86_64-w64-mingw32-gcc, a GCC compiler binary to allow building for Windows.
 
 On Mac, run the following command.
 
-    brew install llvm llvm@9 mingw-w64
+    brew install llvm mingw-w64
     
 If you don't have Homebrew, obtain it from [here](https://brew.sh/) first.
 
@@ -68,7 +68,7 @@ install Java, Maven and junixsocket, and you should be good to go.
 ### Bump project version
 
     cd junixsocket
-    mvn versions:set -DnewVersion=2.5.0
+    mvn versions:set -DnewVersion=2.5.1
     # git add / commit here...
     
 ### Build native libraries on other supported, common platforms
@@ -86,8 +86,8 @@ The platform-dependent nar files should now be available in the local maven repo
 Use the provided script to copy the corresponding nar to a project folder:
 
     cd junixsocket
-    # replace 2.5.0 with the desired version number
-    junixsocket-native-prebuilt/bin/copy-nar-from-m2repo.sh 2.5.0
+    # replace 2.5.1 with the desired version number
+    junixsocket-native-prebuilt/bin/copy-nar-from-m2repo.sh 2.5.1
 
 Now copy the nar files from the target machine to your development computer (from where you do the release).
 By convention, copy the files to the same folder as on the target machine (*junixsocket/junixsocket-native-prebuilt/bin*)
@@ -107,9 +107,9 @@ a script to run the demo classes from the command-line.
 
 The files can be found in
 
-   * `junixsocket/junixsocket-dist/target/junixsocket-dist-2.5.0-bin`
-   * `junixsocket/junixsocket-dist/target/junixsocket-dist-2.5.0-bin.tar.gz`
-   * `junixsocket/junixsocket-dist/target/junixsocket-dist-2.5.0-bin.zip`
+   * `junixsocket/junixsocket-dist/target/junixsocket-dist-(VERSION)-bin`
+   * `junixsocket/junixsocket-dist/target/junixsocket-dist-(VERSION)-bin.tar.gz`
+   * `junixsocket/junixsocket-dist/target/junixsocket-dist-(VERSION)-bin.zip`
 
 ### Deploy code to Maven central
 
@@ -119,7 +119,7 @@ The files can be found in
     mvn clean install -Pstrict -Prelease
 
     # after gpgkeyname, specify the key you want to use for signing
-    mvn deploy -Pstrict -Prelease -Psigned -Dgpgkeyname=your@email.com -Dgpg.executable=$(which gpg)
+    mvn deploy -Pstrict -Prelease -Psigned -Dgpgkeyname=$(git config --get user.email) -Dgpg.executable=$(which gpg)
     
 ##### Notes
 
@@ -177,17 +177,33 @@ NOTE: There can be quite a delay (30 minutes?) until the artifact is deployed in
 
 2. Select the newly created tag (= search for the version).
 
-3. Release title = "junixsocket" + version>, e.g., "junixsocket 2.5.0"
+3. Release title = "junixsocket" + version>, e.g., "junixsocket 2.5.1"
 
-4. Hit "Publish release"    
+4. Paste changelog contents to text field
+
+5. Upload binaries: `junixsocket-dist/target/junixsocket-dist-(VERSION)-bin.tar.gz` /
+   `junixsocket-dist-(VERSION)-bin.zip` as well as
+   `junixsocket-selftest/target/junixsocket-selftest-(VERSION)-jar-with-dependencies.jar`
+
+6. Hit "Publish release"
 
 ### Publish website 
 
-This builds the Maven site and publishes it to [https://kohlschutter.github.io/junixsocket/](https://kohlschutter.github.io/junixsocket/).
+This builds the Maven site 
 
-    cd junixsocket 
-    mvn clean install site site:stage -Pstrict -Prelease
-    mvn scm-publish:publish-scm -Pstrict -Prelease
+    cd junixsocket
+    mvn clean && \
+      mvn install site -Pstrict,release && \
+      mvn javadoc:aggregate -P '!with-native,!with-non-modularized,strict,release' && \
+      mvn jxr:aggregate jxr:test-aggregate -P strict,release && \
+      mvn site:stage -Pstrict,release
+
+The website should now be inspected at `junixsocket/target/staging/index.html`
+
+If everything looks good, we can publish it to
+[https://kohlschutter.github.io/junixsocket/](https://kohlschutter.github.io/junixsocket/):
+   
+    mvn scm-publish:publish-scm -Pstrict,release
 
 NOTE: There can be a 10-minute delay until the pages get updated automatically in your browser cache.
 Hit refresh to expedite.

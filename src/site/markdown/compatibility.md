@@ -2,16 +2,16 @@
 
 ## Versioning
 
-junixsocket versions consist of three parts: major, minor and patch (for example, 2.5.0).
+junixsocket versions consist of three parts: major, minor and patch (for example, 2.5.1).
 
 "Minor version" updates (e.g., 2.4.0 -> 2.5.0) can still bring "major" new features but they
 should be backwards compatible to releases of the same "major version" (e.g., 2.x).
 
 `-SNAPSHOT` builds are not considered releases, but merely previews of a future release.
 
-### junixsocket 2.5.0
+### junixsocket 2.5.1
 
-junixsocket 2.5.0 is fully compatible with Java 8 and newer (tested up to Java 19).
+junixsocket 2.5.1 is fully compatible with Java 8 and newer (tested up to Java 19).
 
 junixsocket has been tested to work with Oracle's Java 8 JDK, and OpenJDK for newer versions.
 
@@ -50,6 +50,9 @@ IBM i support verified with 7.1 (IBM i 7R1 / 71-11-2984-4), 7.2 (IBM i 7R2 / 72-
 7.3 (IBM i 7R3 / 73-07-001), 7.4 (IBM i 7R4 / 74-05-2984-1) on s922 and e980, using IBM J9 64-bit
 VMs (Java 8, and Java 11 where available).
 
+IBM z/OS is supported with caveats (not all [selftests](selftest.html) currently pass, and you have
+to compile from source with XLC).
+
 Support for [custom architectures](customarch.html) can be added by compiling a custom native binary
 on the target machine, or by [cross-compiling](crosscomp.html) using clang/LLVM on a suitable host.
 
@@ -68,7 +71,7 @@ Please reach out if you have some feature in mind that may be supported on these
 ## Additional Platforms and Architectures
 
 Upon request, support for additional systems, platforms and architectures may be added,
-such as IBM z/OS, OpenVMS, FUJITSU BS2000/OSD, QNX, VxWorks, HP-UX, Haiku, etc.
+such as OpenVMS, FUJITSU BS2000/OSD, Unisys ClearPath OS 2200, unQNX, VxWorks, HP-UX, Haiku, etc.
 
 If you are interested in using junixsocket on another platform, or willing to sponsor development
 (by providing access to such platforms, covering licensing costs, etc.), feel free to
@@ -77,9 +80,9 @@ or [contact Christian Kohlschütter via email](mailto:christian@kohlschutter.com
 
 ## Selftest
 
-A reliable way to ensure that junixsocket works in your environment is to run the "selftest".
+A reliable way to ensure that junixsocket works in your environment is to run the "[selftest](selftest.html)".
 
-    java -jar junixsocket-selftest-2.5.0-jar-with-dependencies.jar
+    java -jar junixsocket-selftest-2.5.1-jar-with-dependencies.jar
 
 The last line should say "Selftest PASSED", and you're good to go.
 

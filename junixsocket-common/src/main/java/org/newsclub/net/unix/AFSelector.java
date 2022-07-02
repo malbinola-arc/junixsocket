@@ -19,6 +19,7 @@ package org.newsclub.net.unix;
 
 import java.io.FileDescriptor;
 import java.io.IOException;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedSelectorException;
@@ -27,6 +28,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.spi.AbstractSelectableChannel;
 import java.nio.channels.spi.AbstractSelector;
+import java.util.AbstractSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -34,36 +36,22 @@ import java.util.Iterator;
 import java.util.Set;
 
 final class AFSelector extends AbstractSelector {
-  private static AFPipe sharedSelectorPipe = null;
-  private static PollFd sharedSelectorPipePollFd;
+  private final AFPipe selectorPipe;
+  private final PollFd selectorPipePollFd;
 
-  private static final ByteBuffer PIPE_MSG_WAKE_UP = ByteBuffer.allocate(1);
-  private static final ByteBuffer PIPE_MSG_RECEIVE_BUFFER = ByteBuffer.allocateDirect(256);
+  private final ByteBuffer pipeMsgWakeUp = ByteBuffer.allocate(1);
+  private final ByteBuffer pipeMsgReceiveBuffer = ByteBuffer.allocateDirect(256);
 
   private final Set<AFSelectionKey> keysRegistered = new HashSet<>();
 
-  @SuppressWarnings("unchecked")
-  private final Set<SelectionKey> keysView =
-      (Set<SelectionKey>) (Set<? extends SelectionKey>) Collections.unmodifiableSet(keysRegistered);
-
   private PollFd pollFd = null;
+  private final Set<SelectionKey> keysSelected = new HashSet<>();
 
-  private final SelectionKeySet keysSelected = new SelectionKeySet();
-
-  protected AFSelector(AFSelectorProvider<?> provider) {
+  protected AFSelector(AFSelectorProvider<?> provider) throws IOException {
     super(provider);
-  }
 
-  private static synchronized AFPipe getSharedSelectorPipe() throws IOException {
-    if (sharedSelectorPipe == null) {
-      sharedSelectorPipe = AFUNIXSelectorProvider.getInstance().openSelectablePipe();
-      sharedSelectorPipePollFd = new PollFd(sharedSelectorPipe.sourceFD());
-    }
-    return sharedSelectorPipe;
-  }
-
-  protected AFPipe selectorPipe() throws IOException {
-    return getSharedSelectorPipe();
+    this.selectorPipe = AFUNIXSelectorProvider.getInstance().openSelectablePipe();
+    this.selectorPipePollFd = new PollFd(selectorPipe.sourceFD());
   }
 
   @Override
@@ -78,12 +66,16 @@ final class AFSelector extends AbstractSelector {
 
   @Override
   public Set<SelectionKey> keys() {
-    return keysView;
+    synchronized (this) {
+      return Collections.unmodifiableSet(new HashSet<>(keysRegistered));
+    }
   }
 
   @Override
   public Set<SelectionKey> selectedKeys() {
-    return keysSelected;
+    synchronized (keysSelected) {
+      return new SelectionKeySet(keysSelected);
+    }
   }
 
   @Override
@@ -119,7 +111,9 @@ final class AFSelector extends AbstractSelector {
         throw new ClosedSelectorException();
       }
       pfd = pollFd = initPollFd(pollFd);
-      keysSelected.clear();
+      synchronized (keysSelected) {
+        keysSelected.clear();
+      }
     }
     int num;
     try {
@@ -147,7 +141,9 @@ final class AFSelector extends AbstractSelector {
         consumeAllBytesAfterPoll();
         setOpsReady();
       }
-      return keysSelected.size();
+      synchronized (keysSelected) {
+        return keysSelected.size();
+      }
     }
   }
 
@@ -161,24 +157,24 @@ final class AFSelector extends AbstractSelector {
     int maxReceive;
     int bytesReceived;
 
-    int options = selectorPipe().getOptions();
+    int options = selectorPipe.getOptions();
 
-    synchronized (PIPE_MSG_RECEIVE_BUFFER) {
-      PIPE_MSG_RECEIVE_BUFFER.clear();
-      maxReceive = PIPE_MSG_RECEIVE_BUFFER.remaining();
-      bytesReceived = NativeUnixSocket.receive(pollFd.fds[0], PIPE_MSG_RECEIVE_BUFFER, 0,
-          maxReceive, null, options, null, 1);
+    synchronized (pipeMsgReceiveBuffer) {
+      pipeMsgReceiveBuffer.clear();
+      maxReceive = pipeMsgReceiveBuffer.remaining();
+      bytesReceived = NativeUnixSocket.receive(pollFd.fds[0], pipeMsgReceiveBuffer, 0, maxReceive,
+          null, options, null, 1);
     }
 
     if (bytesReceived == maxReceive && maxReceive > 0) {
       // consume all pending bytes
       int read;
       do {
-        if ((read = NativeUnixSocket.poll(sharedSelectorPipePollFd, 0)) > 0) {
-          synchronized (PIPE_MSG_RECEIVE_BUFFER) {
-            PIPE_MSG_RECEIVE_BUFFER.clear();
-            read = NativeUnixSocket.receive(sharedSelectorPipePollFd.fds[0],
-                PIPE_MSG_RECEIVE_BUFFER, 0, maxReceive, null, options, null, 1);
+        if ((read = NativeUnixSocket.poll(selectorPipePollFd, 0)) > 0) {
+          synchronized (pipeMsgReceiveBuffer) {
+            pipeMsgReceiveBuffer.clear();
+            read = NativeUnixSocket.receive(selectorPipePollFd.fds[0], pipeMsgReceiveBuffer, 0,
+                maxReceive, null, options, null, 1);
           }
         }
       } while (read == maxReceive && read > 0);
@@ -196,7 +192,9 @@ final class AFSelector extends AbstractSelector {
       }
       AFSelectionKey key = pollFd.keys[i];
       key.setOpsReady(rops);
-      keysSelected.add0(key);
+      synchronized (keysSelected) {
+        keysSelected.add(key);
+      }
     }
   }
 
@@ -212,8 +210,24 @@ final class AFSelector extends AbstractSelector {
         }
       }
 
-      if (existingPollFd != null) {
-        return existingPollFd;
+      if (existingPollFd != null && //
+          existingPollFd.keys != null && //
+          (existingPollFd.keys.length - 1) == keysRegistered.size()) {
+        boolean needsUpdate = false;
+        int i = 1;
+        for (AFSelectionKey key : keysRegistered) {
+          if (existingPollFd.keys[i] != key || !key.isValid()) { // NOPMD
+            needsUpdate = true;
+            break;
+          }
+          existingPollFd.ops[i] = key.interestOps();
+
+          i++;
+        }
+
+        if (!needsUpdate) {
+          return existingPollFd;
+        }
       }
 
       int size = keysRegistered.size() + 1;
@@ -221,7 +235,7 @@ final class AFSelector extends AbstractSelector {
       int[] ops = new int[size];
 
       AFSelectionKey[] keys = new AFSelectionKey[size];
-      fds[0] = selectorPipe().sourceFD();
+      fds[0] = selectorPipe.sourceFD();
       ops[0] = SelectionKey.OP_READ;
 
       int i = 1;
@@ -238,21 +252,32 @@ final class AFSelector extends AbstractSelector {
   @Override
   protected void implCloseSelector() throws IOException {
     wakeup();
+    Set<SelectionKey> keys;
     synchronized (this) {
-      for (AFSelectionKey key : keysRegistered) {
-        key.cancelNoRemove();
-      }
+      keys = keys();
       keysRegistered.clear();
     }
+    for (SelectionKey key : keys) {
+      ((AFSelectionKey) key).cancelNoRemove();
+    }
+    selectorPipe.close();
   }
 
   @Override
   public Selector wakeup() {
     if (isOpen()) {
       try {
-        synchronized (PIPE_MSG_WAKE_UP) {
-          PIPE_MSG_WAKE_UP.clear();
-          selectorPipe().sink().write(PIPE_MSG_WAKE_UP);
+        synchronized (pipeMsgWakeUp) {
+          pipeMsgWakeUp.clear();
+          try {
+            selectorPipe.sink().write(pipeMsgWakeUp);
+          } catch (SocketException e) {
+            if (selectorPipe.sinkFD().valid()) {
+              throw e;
+            } else {
+              // ignore (Broken pipe, etc)
+            }
+          }
         }
       } catch (IOException e) {
         // FIXME throw as runtimeexception?
@@ -265,7 +290,9 @@ final class AFSelector extends AbstractSelector {
   synchronized void remove(AFSelectionKey key) {
     deregister(key);
     keysRegistered.remove(key);
-    keysSelected.remove(key);
+    synchronized (keysSelected) {
+      keysSelected.remove(key);
+    }
     pollFd = null;
   }
 
@@ -314,21 +341,94 @@ final class AFSelector extends AbstractSelector {
     }
   }
 
-  private static final class SelectionKeySet extends HashSet<SelectionKey> {
-    private static final long serialVersionUID = 1L;
+  private static final class SelectionKeySet extends AbstractSet<SelectionKey> {
+    private final Set<SelectionKey> keys;
+
+    SelectionKeySet(Set<SelectionKey> keys) {
+      super();
+      this.keys = keys;
+    }
 
     @Override
     public boolean add(SelectionKey e) {
       throw new UnsupportedOperationException();
     }
 
-    private void add0(SelectionKey e) {
-      super.add(e);
-    }
-
     @Override
     public boolean addAll(Collection<? extends SelectionKey> c) {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean remove(Object o) {
+      synchronized (keys) {
+        return keys.remove(o);
+      }
+    }
+
+    @Override
+    public Iterator<SelectionKey> iterator() {
+      final Set<SelectionKey> copy;
+      synchronized (keys) {
+        copy = new HashSet<>(keys);
+      }
+      Iterator<SelectionKey> it = copy.iterator();
+      return new Iterator<SelectionKey>() {
+        SelectionKey current = null;
+
+        @Override
+        public boolean hasNext() {
+          return it.hasNext();
+        }
+
+        @Override
+        public SelectionKey next() {
+          current = it.next();
+          return current;
+        }
+
+        @Override
+        public void remove() {
+          if (current != null) {
+            SelectionKeySet.this.remove(current);
+          }
+        }
+      };
+    }
+
+    @Override
+    public int size() {
+      synchronized (keys) {
+        return keys.size();
+      }
+    }
+
+    @Override
+    public boolean isEmpty() {
+      synchronized (keys) {
+        return keys.isEmpty();
+      }
+    }
+
+    @Override
+    public boolean contains(Object o) {
+      synchronized (keys) {
+        return keys.contains(o);
+      }
+    }
+
+    @Override
+    public boolean containsAll(Collection<?> c) {
+      synchronized (keys) {
+        return super.containsAll(c);
+      }
+    }
+
+    @Override
+    public void clear() {
+      synchronized (keys) {
+        keys.clear();
+      }
     }
   }
 }

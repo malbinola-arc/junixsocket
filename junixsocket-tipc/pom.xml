@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.kohlschutter.junixsocket</groupId>
         <artifactId>junixsocket-parent</artifactId>
-        <version>2.5.0</version>
+        <version>2.5.1</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <name>junixsocket-tipc</name>
@@ -41,6 +41,12 @@
             <groupId>com.kohlschutter.junixsocket</groupId>
             <artifactId>junixsocket-common</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.kohlschutter.junixsocket</groupId>
+            <artifactId>junixsocket-core</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
         </dependency>
 
         <dependency>

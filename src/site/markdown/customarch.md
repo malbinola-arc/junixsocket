@@ -9,7 +9,9 @@ Here's how you build your custom artifacts.
  
  1. Make sure you have a machine running your target platform. 
  2. Install the Java JDK 9 or newer (preferably Java 11), Maven 3.6 or newer, and junixsocket.
- 3. Install a development environment so you can compile C code (e.g., gcc, clang, etc.)
+ 3. Install a development environment so you can compile C code.
+ 
+    junixsocket specifically needs `bash`, `clang`/`gcc`, `ld`, and system C headers.
  
 > **NOTE** You may also be able to cross-compile code for your target platform, on your development
 machine. See [Cross-compiling junixsocket](crosscomp.html) for details. 
@@ -84,7 +86,7 @@ for development and testing purposes:
     <dependency>
       <groupId>com.kohlschutter.junixsocket</groupId>
       <artifactId>junixsocket-native-custom</artifactId>
-      <version>2.5.0</version>
+      <version>2.5.1</version>
       <classifier>amd64-Linux-gpp-jni</classifier>
     </dependency>
 
@@ -97,7 +99,7 @@ have your custom artifact, there's a chance it wouldn't even build on other peop
 An alternative is to directly add the junixsocket-native-custom jar to the classpath whenever you
 invoke the Java VM (e.g., your web server, etc.), for example:
 
-    java -cp junixsocket-native-custom-2.5.0-amd64-Linux-gpp-jni.jar:*(...)* *YourMainClass*
+    java -cp junixsocket-native-custom-2.5.1-amd64-Linux-gpp-jni.jar:*(...)* *YourMainClass*
 
 ## If that doesn't work...
 
@@ -107,7 +109,7 @@ the native library yourself.
 Simply set the system property `org.newsclub.net.unix.library.override` to the absolute path of the native
 library. For example:
 
-    java -Dorg.newsclub.net.unix.library.override=/path/to/junixsocket-native-2.5.0.so (...)
+    java -Dorg.newsclub.net.unix.library.override=/path/to/junixsocket-native-2.5.1.so (...)
 
 If this override fails to load, an attempt is made to load the standard junixsocket library,
 unless the system property `org.newsclub.net.unix.library.override.force` is set to `true`.
@@ -115,7 +117,7 @@ unless the system property `org.newsclub.net.unix.library.override.force` is set
 You can also specify the absolute path with the system property
 `org.newsclub.net.unix.library.override.force`, which essentially combines these two declarations, i.e.
  
-    java -Dorg.newsclub.net.unix.library.override.force=/path/to/junixsocket-native-2.5.0.so (...)
+    java -Dorg.newsclub.net.unix.library.override.force=/path/to/junixsocket-native-2.5.1.so (...)
  
 ## If that doesn't work either...
 
